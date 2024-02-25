@@ -14,22 +14,23 @@
 #define MQTT_PAYLOAD_VERSION_COMMAND "version" //show the version number
 #define MQTT_PAYLOAD_STATUS_COMMAND "status" //show the most recent flow values
 #define JSON_STATUS_SIZE SSID_SIZE+PASSWORD_SIZE+USERNAME_SIZE+MQTT_TOPIC_SIZE+50 //+50 for associated field names, etc
-#define SENSOR_PIN 4     // the input pin for the sensor
+#define SENSOR_PIN 2     // GPIO2 is on pin 3 of the ESP8266-01S
 #define DEBOUNCE_DELAY 20
 //#define LED_BUILTIN 2     //the blue LED on ESP32
 #define REPORT_FREQ 15000 //milliseconds
+#define MAX_WIFI_WAIT_COUNT 100 //maximum number of dots to print when connecting to wifi
 #define DEFAULT_PULSES_PER_LITER 396.0 //was 363.0
 
 
 // Error codes copied from the MQTT library
-#define MQTT_CONNECTION_REFUSED            -2
-#define MQTT_CONNECTION_TIMEOUT            -1
-#define MQTT_SUCCESS                        0
-#define MQTT_UNACCEPTABLE_PROTOCOL_VERSION  1
-#define MQTT_IDENTIFIER_REJECTED            2
-#define MQTT_SERVER_UNAVAILABLE             3
-#define MQTT_BAD_USER_NAME_OR_PASSWORD      4
-#define MQTT_NOT_AUTHORIZED                 5
+// #define MQTT_CONNECTION_REFUSED            -2
+// #define MQTT_CONNECTION_TIMEOUT            -1
+// #define MQTT_SUCCESS                        0
+// #define MQTT_UNACCEPTABLE_PROTOCOL_VERSION  1
+// #define MQTT_IDENTIFIER_REJECTED            2
+// #define MQTT_SERVER_UNAVAILABLE             3
+// #define MQTT_BAD_USER_NAME_OR_PASSWORD      4
+// #define MQTT_NOT_AUTHORIZED                 5
   
 
 //WiFi status codes
@@ -38,3 +39,29 @@
 //3 : WL_CONNECTED after successful connection is established
 //4 : WL_CONNECT_FAILED if password is incorrect
 //6 : WL_DISCONNECTED if module is not configured in station mode
+
+//Function prototypes
+void setup();
+void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length);
+void showSettings();
+void reconnectToBroker();
+String getConfigCommand();
+void processCommand(String cmd);
+void initializeSettings();
+void loop();
+void checkForCommand();
+void report();
+boolean publish(char* topic, char* reading);
+void loadSettings();
+boolean saveSettings();
+void resetPulseCounter();
+char* getMqttSettings();
+const char* getVersion();
+boolean getMqttStatus();
+boolean storePulseCount();
+void readPulseCount();
+void incomingSerial();
+void handleInterrupt(); 
+void handlePulse();
+void sendReport();
+boolean connectToWifi();
