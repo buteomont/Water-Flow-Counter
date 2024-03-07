@@ -20,9 +20,6 @@ const char* VERSION = "24.02.24.0";  //remember to update this after every chang
 // 3) Change broker value to a server with a known SSL/TLS root certificate 
 //    flashed in the WiFi module.
 
-//PubSubClient callback function header.  This must appear before the PubSubClient constructor.
-void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length);
-
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
@@ -52,12 +49,13 @@ typedef struct
   char mqttPassword[PASSWORD_SIZE]="";
   char mqttTopicRoot[MQTT_TOPIC_SIZE]="";
   float pulsesPerLiter=DEFAULT_PULSES_PER_LITER;
+  unsigned int reportInterval=DEFAULT_REPORT_INTERVAL; //seconds
   } conf;
 
 conf settings; //all settings in one struct makes it easier to store in EEPROM
 boolean settingsAreValid=false;
 
-int pulseCountStorage=sizeof(settings); //use the EEPROM location after settings to store the pulse counter occasionally
+// int pulseCountStorage=sizeof(settings); //use the EEPROM location after settings to store the pulse counter occasionally
 
 String commandString = "";     // a String to hold incoming commands from serial
 bool commandComplete = false;  // goes true when enter is pressed
@@ -212,6 +210,11 @@ void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length)
     strcpy(response,"REBOOTING");
     rebootScheduled=true;
     }
+  else if (std::strchr(charbuf, '=') != nullptr) //we have a setting to change
+    {
+    processCommand(charbuf);
+    strcpy(response,getMqttSettings());
+    }
   else
     {
     strcpy(response,"(empty)");
@@ -257,6 +260,9 @@ void showSettings()
   Serial.print("pulsesPerLiter=<number of pulses generated per liter of flow>   (");
   Serial.print(settings.pulsesPerLiter,4);
   Serial.println(")");
+  Serial.print("reportInterval=<number of seconds between MQTT reports>   (");
+  Serial.print(settings.reportInterval);
+  Serial.println(")");
   Serial.println("\"reboot=yes\" to reboot the controller");
   Serial.println("\"resetPulses=yes\" to reset the pulse counter to zero");
   Serial.println("\n*** Use \"factorydefaults=yes\" to reset all settings ***\n");
@@ -268,7 +274,7 @@ void showSettings()
 void reconnectToBroker() 
   {
   // Create a random client ID
-  String clientId = "ESP32Client-";
+  String clientId = "ESPClient-";
   clientId += String(random(0xffff), HEX);
   
   // Loop until we're reconnected
@@ -329,7 +335,7 @@ void handlePulse()
 void sendReport()
   {
   unsigned long ts=millis();
-  if (ts-lastReportTime>REPORT_FREQ)
+  if (ts-lastReportTime>settings.reportInterval*1000)
     {
     report();
     lastReportTime=ts;
@@ -357,9 +363,10 @@ String getConfigCommand()
   else return "";
   }
 
-void processCommand(String cmd)
+void processCommand(char* str)
   {
-  const char *str=cmd.c_str();
+  // Serial.print("Received this line:");
+  // Serial.println(str);
   char *val=NULL;
   char *nme=strtok((char *)str,"=");
   if (nme!=NULL)
@@ -431,6 +438,15 @@ void processCommand(String cmd)
     if (settingsAreValid)
       ESP.restart();
     }
+  else if (strcmp(nme,"reportInterval")==0)
+    {
+    Serial.print(val);
+    Serial.print(":");
+    Serial.println(atoi(val));
+    settings.reportInterval=atoi(val);
+    Serial.println(settings.reportInterval);
+    saveSettings();
+    }
   else if ((strcmp(nme,"reboot")==0) && (strcmp(val,"yes")==0)) //reboot the controller
     {
     Serial.println("\n*********************** Rebooting! ************************");
@@ -467,6 +483,7 @@ void initializeSettings()
   strcpy(settings.mqttPassword,"");
   strcpy(settings.mqttTopicRoot,"");
   settings.pulsesPerLiter=DEFAULT_PULSES_PER_LITER;
+  settings.reportInterval=DEFAULT_REPORT_INTERVAL;
   pulseCount=0;
   }
 
@@ -501,7 +518,8 @@ void checkForCommand()
     String cmd=getConfigCommand();
     if (cmd.length()>0)
       {
-      processCommand(cmd);
+      char *str=(char*)cmd.c_str();
+      processCommand(str);
       }
     }
   }
@@ -582,7 +600,8 @@ boolean saveSettings()
 //    strlen(settings.mqttUsername)>0 &&
 //    strlen(settings.mqttPassword)>0 &&
     strlen(settings.mqttTopicRoot)>0 &&
-    settings.pulsesPerLiter!=0)
+    settings.pulsesPerLiter!=0 &&
+    settings.reportInterval>0)
     {
     Serial.println("Settings deemed valid");
     settings.validConfig=VALID_SETTINGS_FLAG;
@@ -687,6 +706,9 @@ char* getMqttSettings()
   strcat(jsonStatus,settings.wifiPassword);
   strcat(jsonStatus,"\", \"pulsesPerLiter\":");
   sprintf(tempbuf,"%.4f",settings.pulsesPerLiter);
+  strcat(jsonStatus,tempbuf);
+  strcat(jsonStatus,"\", \"reportInterval\":");
+  sprintf(tempbuf,"%d",settings.reportInterval);
   strcat(jsonStatus,tempbuf);
   strcat(jsonStatus,"}");
   return jsonStatus;

@@ -17,7 +17,7 @@
 #define SENSOR_PIN 2     // GPIO2 is on pin 3 of the ESP8266-01S
 #define DEBOUNCE_DELAY 20
 //#define LED_BUILTIN 2     //the blue LED on ESP32
-#define REPORT_FREQ 15000 //milliseconds
+#define DEFAULT_REPORT_INTERVAL 15 //milliseconds
 #define MAX_WIFI_WAIT_COUNT 100 //maximum number of dots to print when connecting to wifi
 #define DEFAULT_PULSES_PER_LITER 396.0 //was 363.0
 
@@ -46,7 +46,7 @@ void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length);
 void showSettings();
 void reconnectToBroker();
 String getConfigCommand();
-void processCommand(String cmd);
+void processCommand(char* cmd);
 void initializeSettings();
 void loop();
 void checkForCommand();
@@ -65,3 +65,6 @@ void handleInterrupt();
 void handlePulse();
 void sendReport();
 boolean connectToWifi();
+
+//PubSubClient callback function header.  This must appear before the PubSubClient constructor.
+void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length);
