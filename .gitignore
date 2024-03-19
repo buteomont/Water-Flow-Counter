@@ -23,4 +23,5 @@ resources/KiCad/WaterFlowCounter/WaterFlowCounter-backups/WaterFlowCounter-2024-
 resources/KiCad/WaterFlowCounter/WaterFlowCounter-backups/WaterFlowCounter-2024-02-28_102635.zip
 resources/KiCad/WaterFlowCounter/WaterFlowCounter-backups/WaterFlowCounter-2024-02-28_134341.zip
 resources/KiCad/WaterFlowCounter/WaterFlowCounter-backups/WaterFlowCounter-2024-03-06_194341.zip
-resources/KiCad/WaterFlowCounter/Gerbers/WaterFlowCounter.zip
+*.zip
+*cache
