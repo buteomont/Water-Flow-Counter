@@ -710,7 +710,7 @@ char* getMqttSettings()
   strcat(jsonStatus,"\", \"pulsesPerLiter\":");
   sprintf(tempbuf,"%.4f",settings.pulsesPerLiter);
   strcat(jsonStatus,tempbuf);
-  strcat(jsonStatus,"\", \"reportInterval\":");
+  strcat(jsonStatus,", \"reportInterval\":");
   sprintf(tempbuf,"%d",settings.reportInterval);
   strcat(jsonStatus,tempbuf);
   strcat(jsonStatus,"}");
