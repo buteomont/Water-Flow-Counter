@@ -18,7 +18,7 @@
 //#define LED_BUILTIN 2     //the blue LED on ESP32
 #define DEFAULT_REPORT_INTERVAL 15 //milliseconds
 #define MAX_WIFI_WAIT_COUNT 100 //maximum number of dots to print when connecting to wifi
-#define DEFAULT_PULSES_PER_LITER 396.0 //was 363.0
+#define DEFAULT_PULSES_PER_LITER 419.51 //was 396.0
 
 #ifdef BOARD_D1_MINI
   #define SENSOR_PIN D5  // GPI14 is on pin D5 of the Wemos D1 mini
