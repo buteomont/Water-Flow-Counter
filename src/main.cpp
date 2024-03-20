@@ -339,6 +339,9 @@ void sendReport()
     {
     report();
     lastReportTime=ts;
+    Serial.print("Sensor pin is ");
+    Serial.println(SENSOR_PIN);
+
 //    storePulseCount(); //save the pulse count value in case we lose power
     digitalWrite(LED_BUILTIN, HIGH); //turn off the LED when water stops
     }

@@ -14,13 +14,17 @@
 #define MQTT_PAYLOAD_VERSION_COMMAND "version" //show the version number
 #define MQTT_PAYLOAD_STATUS_COMMAND "status" //show the most recent flow values
 #define JSON_STATUS_SIZE SSID_SIZE+PASSWORD_SIZE+USERNAME_SIZE+MQTT_TOPIC_SIZE+50 //+50 for associated field names, etc
-#define SENSOR_PIN 2     // GPIO2 is on pin 3 of the ESP8266-01S
 #define DEBOUNCE_DELAY 20
 //#define LED_BUILTIN 2     //the blue LED on ESP32
 #define DEFAULT_REPORT_INTERVAL 15 //milliseconds
 #define MAX_WIFI_WAIT_COUNT 100 //maximum number of dots to print when connecting to wifi
 #define DEFAULT_PULSES_PER_LITER 396.0 //was 363.0
 
+#ifdef BOARD_D1_MINI
+  #define SENSOR_PIN D5  // GPI14 is on pin D5 of the Wemos D1 mini
+#else
+  #define SENSOR_PIN 2   // GPIO2 is on pin 3 of the ESP8266-01S
+#endif
 
 // Error codes copied from the MQTT library
 // #define MQTT_CONNECTION_REFUSED            -2
