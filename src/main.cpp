@@ -277,6 +277,9 @@ void showSettings()
   Serial.print("reportInterval=<number of seconds between MQTT reports>   (");
   Serial.print(settings.reportInterval);
   Serial.println(")");
+  Serial.print("pulseCount=<cumulative pulse count>   (");
+  Serial.print(pulseCount);
+  Serial.println(")");
   Serial.print("IP Address is ");
   Serial.print(WiFi.localIP().toString().c_str());
   Serial.println("\n");
@@ -490,6 +493,13 @@ void processCommand(char* str)
     saveSettings();
     if (settingsAreValid)
       restartNeeded=true;
+    }
+  else if (strcmp(nme,"pulseCount")==0) //might need to manually update it
+    {
+    pulseCount=atoi(val);
+    storePulseCount();
+    Serial.print("Pulse count set to ");
+    Serial.println(pulseCount);
     }
   else if (strcmp(nme,"reportInterval")==0)
     {
@@ -775,6 +785,9 @@ char* getMqttSettings()
   strcat(jsonStatus,tempbuf);
   strcat(jsonStatus,", \"reportInterval\":");
   sprintf(tempbuf,"%d",settings.reportInterval);
+  strcat(jsonStatus,tempbuf);
+  strcat(jsonStatus,", \"pulseCount\":");
+  sprintf(tempbuf,"%lu",pulseCount);
   strcat(jsonStatus,tempbuf);
   strcat(jsonStatus,", \"Address\":\"");
   strcat(jsonStatus,WiFi.localIP().toString().c_str());
