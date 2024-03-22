@@ -7,6 +7,7 @@
 #define MQTT_TOPIC_RAW "pulses"
 #define MQTT_TOPIC_LITERS "liters"
 #define MQTT_TOPIC_PERIOD "period"
+#define MQTT_TOPIC_SAVE_PULSE_COUNT "countSaved"
 #define MQTT_TOPIC_COMMAND_REQUEST "command"
 #define MQTT_PAYLOAD_SETTINGS_COMMAND "settings" //show all user accessable settings
 #define MQTT_PAYLOAD_RESET_PULSE_COMMAND "resetPulseCounter" //reset the pulse counter to zero
@@ -16,7 +17,7 @@
 #define JSON_STATUS_SIZE SSID_SIZE+PASSWORD_SIZE+USERNAME_SIZE+MQTT_TOPIC_SIZE+50 //+50 for associated field names, etc
 #define DEBOUNCE_DELAY 20
 //#define LED_BUILTIN 2     //the blue LED on ESP32
-#define DEFAULT_REPORT_INTERVAL 15 //milliseconds
+#define DEFAULT_REPORT_INTERVAL 15 //seconds. Should be 60 IRL
 #define MAX_WIFI_WAIT_COUNT 100 //maximum number of dots to print when connecting to wifi
 #define DEFAULT_PULSES_PER_LITER 419.51 //was 396.0
 

@@ -82,18 +82,6 @@
           "size_x": 1199,
           "size_y": 708
         }
-      },
-      {
-        "name": "WaterFlowCounter.kicad_pcb",
-        "open": false,
-        "window": {
-          "display": 0,
-          "maximized": false,
-          "pos_x": 116,
-          "pos_y": 516,
-          "size_x": 1214,
-          "size_y": 699
-        }
       }
     ]
   }

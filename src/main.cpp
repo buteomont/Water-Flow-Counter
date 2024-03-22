@@ -7,7 +7,7 @@
  * should be connected between pin 3 (GPIO2) and ground (pin 1).
  *  
  */
-const char* VERSION = "24.02.24.0";  //remember to update this after every change! YY.MM.DD.REV
+const char* VERSION = "24.03.21.0";  //remember to update this after every change! YY.MM.DD.REV
  
 #include <PubSubClient.h> 
 #include <ESP8266WiFi.h>
@@ -26,8 +26,11 @@ PubSubClient mqttClient(wifiClient);
 //mqtt stuff
 unsigned long lastMessageSent = 0;
 int messageCount = 0;
-unsigned long lastReportTime=0;
+unsigned long lastReportTime=0;  // This is the time of the last report
+unsigned long lastReportCount=0; // This is the pulse count at the last report
 boolean finalReportSent=true;
+
+boolean restartNeeded=false;    // Sent as a reminder when settings change
 
 //flow stuff
 boolean lastTick=false;
@@ -55,17 +58,25 @@ typedef struct
 conf settings; //all settings in one struct makes it easier to store in EEPROM
 boolean settingsAreValid=false;
 
-// int pulseCountStorage=sizeof(settings); //use the EEPROM location after settings to store the pulse counter occasionally
+int pulseCountStorage=sizeof(settings); //use the EEPROM location after settings to store the pulse counter occasionally
 
 String commandString = "";     // a String to hold incoming commands from serial
 bool commandComplete = false;  // goes true when enter is pressed
+
+void reboot()
+  {
+  storePulseCount(); //just in case
+  delay(500);
+  ESP.restart();
+  }
+
 
 void setup() 
   {
   //Set up hardware
   pinMode(SENSOR_PIN,INPUT_PULLUP);
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, LOW); //turn on the LED to show we are booting
+  //pinMode(LED_BUILTIN, OUTPUT);
+  //digitalWrite(LED_BUILTIN, LOW); //turn on the LED to show we are booting
   
   //Initialize the serial port and wait for it to open 
   Serial.begin(115200);
@@ -100,9 +111,9 @@ void setup()
     Serial.println("\n*********************** Resetting All EEPROM Values ************************");
     initializeSettings();
     saveSettings();
-    storePulseCount(); //store the zeroed pulse counter too
+    resetPulseCounter(); //store the zeroed pulse counter too
     delay(2000);
-    ESP.restart();
+    reboot();
     }
   readPulseCount(); //restore the pulse count value from before power loss
 
@@ -127,8 +138,11 @@ void setup()
       Serial.println();
       }
     }
-    
-  digitalWrite(LED_BUILTIN, HIGH); //turn off the LED
+
+  Serial.print("Sensor pin is ");
+  Serial.println(SENSOR_PIN);
+  
+  //digitalWrite(LED_BUILTIN, HIGH); //turn off the LED
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handleInterrupt, FALLING); // Attach interrupt handler to sensor pin with falling edge detection
   }
 
@@ -230,7 +244,7 @@ void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length)
   if (rebootScheduled)
     {
     delay(2000); //give publish time to complete
-    ESP.restart();
+    reboot();
     }
   }
 
@@ -263,9 +277,16 @@ void showSettings()
   Serial.print("reportInterval=<number of seconds between MQTT reports>   (");
   Serial.print(settings.reportInterval);
   Serial.println(")");
+  Serial.print("IP Address is ");
+  Serial.print(WiFi.localIP().toString().c_str());
+  Serial.println("\n");
+
   Serial.println("\"reboot=yes\" to reboot the controller");
   Serial.println("\"resetPulses=yes\" to reset the pulse counter to zero");
-  Serial.println("\n*** Use \"factorydefaults=yes\" to reset all settings ***\n");
+  Serial.println("*** Use \"factorydefaults=yes\" to reset all settings ***\n");
+
+  if (restartNeeded)
+    Serial.println("\n***** Warning: Reboot is needed *****");
   }
 
 /*
@@ -273,6 +294,11 @@ void showSettings()
  */
 void reconnectToBroker() 
   {
+  if (WiFi.status() != WL_CONNECTED)
+    {
+    connectToWifi();
+    return;
+    }
   // Create a random client ID
   String clientId = "ESPClient-";
   clientId += String(random(0xffff), HEX);
@@ -328,22 +354,35 @@ void handlePulse()
   lastPulseTime=millis();
   lastTick=!lastTick; // used to flash the light 
   liters=pulseCount/settings.pulsesPerLiter;
-  digitalWrite(LED_BUILTIN, lastTick?LOW:HIGH); //HIGH is LED OFF
+  // digitalWrite(LED_BUILTIN, lastTick?LOW:HIGH); //HIGH is LED OFF
   pulseDetected=false;
   }
 
 void sendReport()
   {
+  static bool pulseSaved=true; //On first run, assume pulse was saved so we don't overwrite it
+
   unsigned long ts=millis();
   if (ts-lastReportTime>settings.reportInterval*1000)
     {
     report();
     lastReportTime=ts;
-    Serial.print("Sensor pin is ");
-    Serial.println(SENSOR_PIN);
 
-//    storePulseCount(); //save the pulse count value in case we lose power
-    digitalWrite(LED_BUILTIN, HIGH); //turn off the LED when water stops
+    // If the last report was the same as this report, and we haven't done it yet,
+    // then the valve must be closed and the tank is full.
+    // Store the pulse count into flash in case we lose power.  We don't want to 
+    // do this very often because it will wear out the flash.
+    if (lastReportCount==pulseCount && !pulseSaved)
+      {
+      storePulseCount(); //save the pulse count value in case we lose power
+      pulseSaved=true;
+      }
+    else if (lastReportCount!=pulseCount)
+      {
+      pulseSaved=false;
+      }
+    lastReportCount=pulseCount; //If they stay equal then the water has stopped flowing
+    // digitalWrite(LED_BUILTIN, HIGH); //turn off the LED when water stops
     }
   }
 
@@ -390,71 +429,82 @@ void processCommand(char* str)
     strcpy(settings.mqttBrokerAddress,val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"port")==0)
     {
     settings.mqttBrokerPort=atoi(val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"topicRoot")==0)
     {
+    // Trim whitespace from the end
+    char* end = val + strlen(val) - 1;
+    while (end > val && isspace(*end)) 
+      *end-- = '\0';
+
+    // make sure the string ends with "/"
+    if (val[strlen(val) - 1] != '/')
+      { 
+      const char* slash = "/";
+      strcat(val, slash);
+      }
     strcpy(settings.mqttTopicRoot,val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"user")==0)
     {
     strcpy(settings.mqttUsername,val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"pass")==0)
     {
     strcpy(settings.mqttPassword,val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"ssid")==0)
     {
     strcpy(settings.ssid,val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"wifipass")==0)
     {
     strcpy(settings.wifiPassword,val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"pulsesPerLiter")==0)
     {
     settings.pulsesPerLiter=atof(val);
     saveSettings();
     if (settingsAreValid)
-      ESP.restart();
+      restartNeeded=true;
     }
   else if (strcmp(nme,"reportInterval")==0)
     {
-    Serial.print(val);
-    Serial.print(":");
-    Serial.println(atoi(val));
+    // Serial.print(val);
+    // Serial.print(":");
+    // Serial.println(atoi(val));
     settings.reportInterval=atoi(val);
-    Serial.println(settings.reportInterval);
+//    Serial.println(settings.reportInterval);
     saveSettings();
     }
   else if ((strcmp(nme,"reboot")==0) && (strcmp(val,"yes")==0)) //reboot the controller
     {
     Serial.println("\n*********************** Rebooting! ************************");
     delay(2000);
-    ESP.restart();
+    reboot();
     }
   else if ((strcmp(nme,"resetPulses")==0) && (strcmp(val,"yes")==0)) //reset the pulse counter
     {
@@ -466,9 +516,9 @@ void processCommand(char* str)
     Serial.println("\n*********************** Resetting EEPROM Values ************************");
     initializeSettings();
     saveSettings();
-    storePulseCount(); //store the zeroed pulse counter too
+    resetPulseCounter(); //store the zeroed pulse counter too
     delay(2000);
-    ESP.restart();
+    reboot();
     }
   else
     showSettings();
@@ -510,6 +560,12 @@ void loop()
       handlePulse();
       }
     sendReport(); //checks to see if any pulses haven't been timely reported
+    }
+
+  if (millis()%60000==0 && restartNeeded)
+    {
+    Serial.println("\n***** Warning: Reboot is needed *****");
+    delay(20); //to keep it from repeating several times
     }
   }
 
@@ -624,17 +680,23 @@ boolean saveSettings()
   
 /*
  * Save the pulse counter to eeprom
- * NOTE: removed due to the possibility of wearing out the flash memory.
+ * 
  */
  boolean storePulseCount()
   {
-//  Serial.print("Writing pulse counter (");
-//  Serial.print(pulseCount);
-//  Serial.print(" to nonvolatile storage at location ");
-//  Serial.println(pulseCountStorage);
-  // EEPROM.put(pulseCountStorage,pulseCount);
-  // return EEPROM.commit();
-  return true;
+  EEPROM.put(pulseCountStorage,pulseCount);
+  boolean saved=EEPROM.commit();
+
+  char topic[MQTT_TOPIC_SIZE];
+  char message[35];
+
+  //publish the event of saving the pulse count
+  strcpy(topic,settings.mqttTopicRoot);
+  strcat(topic,MQTT_TOPIC_SAVE_PULSE_COUNT);
+  sprintf(message,"%lu",pulseCount);
+  publish(topic,message);
+
+  return saved;
   }
   
 /*
@@ -643,11 +705,12 @@ boolean saveSettings()
  */
  void readPulseCount()
   {
-  // Serial.print("Restoring pulse counter (");
-  // EEPROM.get(pulseCountStorage,pulseCount);
-  // Serial.print(pulseCount);
-  // Serial.println(")");
-  pulseCount=0; //removed storage of pulse counter due to flash write endurance
+  Serial.print("Restoring pulse counter (");
+  EEPROM.get(pulseCountStorage,pulseCount);
+  lastReportCount=pulseCount;
+  Serial.print(pulseCount);
+  Serial.println(")");
+//  pulseCount=0; //removed storage of pulse counter due to flash write endurance
   }
 
 /*
@@ -713,6 +776,9 @@ char* getMqttSettings()
   strcat(jsonStatus,", \"reportInterval\":");
   sprintf(tempbuf,"%d",settings.reportInterval);
   strcat(jsonStatus,tempbuf);
+  strcat(jsonStatus,", \"Address\":\"");
+  strcat(jsonStatus,WiFi.localIP().toString().c_str());
+  strcat(jsonStatus,"\"");
   strcat(jsonStatus,"}");
   return jsonStatus;
   }
