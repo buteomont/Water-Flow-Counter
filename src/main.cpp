@@ -7,7 +7,7 @@
  * should be connected between pin 3 (GPIO2) and ground (pin 1).
  *  
  */
-const char* VERSION = "24.03.21.0";  //remember to update this after every change! YY.MM.DD.REV
+const char* VERSION = "24.03.22.0";  //remember to update this after every change! YY.MM.DD.REV
  
 #include <PubSubClient.h> 
 #include <ESP8266WiFi.h>
