@@ -7,7 +7,7 @@
  * should be connected between pin 3 (GPIO2) and ground (pin 1).
  *  
  */
-const char* VERSION = "24.03.22.0";  //remember to update this after every change! YY.MM.DD.REV
+const char* VERSION = "24.04.15.0";  //remember to update this after every change! YY.MM.DD.REV
  
 #include <PubSubClient.h> 
 #include <ESP8266WiFi.h>
@@ -29,6 +29,7 @@ int messageCount = 0;
 unsigned long lastReportTime=0;  // This is the time of the last report
 unsigned long lastReportCount=0; // This is the pulse count at the last report
 boolean finalReportSent=true;
+boolean startup=true;           // set to false after everything is working
 
 boolean restartNeeded=false;    // Sent as a reminder when settings change
 
@@ -335,30 +336,46 @@ void reconnectToBroker()
       delay(5000);
       }
     }
+  if (startup)
+    {
+    char topic[MQTT_TOPIC_SIZE];
+    char message[18];
+    boolean success=false;
+
+    //Inform the world that we rebooted
+    strcpy(topic,settings.mqttTopicRoot);
+    strcat(topic,MQTT_TOPIC_INFO);
+    sprintf(message,"%s","Startup Complete");
+    success=publish(topic,message);
+    if (!success)
+      Serial.println("************ Failed publishing startup message!");
+    startup=false;
+    }
   }
 
 ICACHE_RAM_ATTR void handleInterrupt() //interrupts must be in IRAM
   {
-  static unsigned long lastDebounceTime = 0;
-  unsigned long currentMillis = millis();
-
-  // See if enough time has passed since the last transition
-  if (currentMillis - lastDebounceTime >= DEBOUNCE_DELAY) 
-    {
-    pulseDetected = true;
-    pulseCount++;
-    lastDebounceTime = currentMillis;
-    }
+  pulseDetected = true;
   }
 
 void handlePulse()
   {
-  Serial.println("Pulse!");
-  lastPulseTime=millis();
-  lastTick=!lastTick; // used to flash the light 
-  liters=pulseCount/settings.pulsesPerLiter;
-  // digitalWrite(LED_BUILTIN, lastTick?LOW:HIGH); //HIGH is LED OFF
-  pulseDetected=false;
+  static unsigned long lastDebounceTime = 0;
+  unsigned long currentMillis = millis();
+  pulseDetected = false;
+
+  // See if enough time has passed since the last transition
+  if (currentMillis - lastDebounceTime >= DEBOUNCE_DELAY) 
+    {
+    pulseCount++;
+    lastDebounceTime = currentMillis;
+    
+    Serial.println("Pulse!");
+    lastPulseTime=millis();
+    lastTick=!lastTick; // used to flash the light 
+    liters=pulseCount/settings.pulsesPerLiter;
+    // digitalWrite(LED_BUILTIN, lastTick?LOW:HIGH); //HIGH is LED OFF
+    }
   }
 
 void sendReport()
@@ -720,6 +737,7 @@ boolean saveSettings()
   lastReportCount=pulseCount;
   Serial.print(pulseCount);
   Serial.println(")");
+  liters=pulseCount/settings.pulsesPerLiter;
 //  pulseCount=0; //removed storage of pulse counter due to flash write endurance
   }
 
