@@ -4,6 +4,8 @@
 #define ADDRESS_SIZE 30
 #define USERNAME_SIZE 50
 #define MQTT_TOPIC_SIZE 150
+#define MQTT_CLIENT_ID_SIZE 20
+#define MQTT_CLIENT_ROOT "Pulse-Counter-"
 #define MQTT_TOPIC_RAW "pulses"
 #define MQTT_TOPIC_LITERS "liters"
 #define MQTT_TOPIC_PERIOD "period"
@@ -15,7 +17,7 @@
 #define MQTT_PAYLOAD_REBOOT_COMMAND "reboot" //reboot the controller
 #define MQTT_PAYLOAD_VERSION_COMMAND "version" //show the version number
 #define MQTT_PAYLOAD_STATUS_COMMAND "status" //show the most recent flow values
-#define JSON_STATUS_SIZE SSID_SIZE+PASSWORD_SIZE+USERNAME_SIZE+MQTT_TOPIC_SIZE+50 //+50 for associated field names, etc
+#define JSON_STATUS_SIZE SSID_SIZE+PASSWORD_SIZE+USERNAME_SIZE+MQTT_TOPIC_SIZE+MQTT_CLIENT_ID_SIZE+50 //+50 for associated field names, etc
 #define DEBOUNCE_DELAY 20
 //#define LED_BUILTIN 2     //the blue LED on ESP32
 #define DEFAULT_REPORT_INTERVAL 15 //seconds. Should be 60 IRL
@@ -23,9 +25,9 @@
 #define DEFAULT_PULSES_PER_LITER 419.51 //was 396.0
 
 #ifdef BOARD_D1_MINI
-  #define SENSOR_PIN D5  // GPI14 is on pin D5 of the Wemos D1 mini
+  #define SENSOR_PIN D5  // GPIO14 is on pin D5 of the Wemos D1 mini
 #else
-  #define SENSOR_PIN 2   // GPIO2 is on pin 3 of the ESP8266-01S
+  #define SENSOR_PIN 2   // GPIO2 is on pin 3 of the ESP8266-01S. Also the blue LED
 #endif
 
 // Error codes copied from the MQTT library
@@ -65,7 +67,7 @@ char* getMqttSettings();
 const char* getVersion();
 boolean getMqttStatus();
 boolean storePulseCount();
-void readPulseCount();
+void loadPulseCount();
 void incomingSerial();
 void handleInterrupt(); 
 void handlePulse();

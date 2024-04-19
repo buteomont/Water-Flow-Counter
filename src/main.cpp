@@ -7,10 +7,11 @@
  * should be connected between pin 3 (GPIO2) and ground (pin 1).
  *  
  */
-const char* VERSION = "24.04.15.0";  //remember to update this after every change! YY.MM.DD.REV
- 
-#include <PubSubClient.h> 
+const char* VERSION = "24.04.18.0";  //remember to update this after every change! YY.MM.DD.REV
+
+#include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h> 
 #include <EEPROM.h>
 #include "mqtt_flow_counter.h"
 
@@ -52,8 +53,10 @@ typedef struct
   char mqttUsername[USERNAME_SIZE]="";
   char mqttPassword[PASSWORD_SIZE]="";
   char mqttTopicRoot[MQTT_TOPIC_SIZE]="";
+  char mqttClientId[MQTT_CLIENT_ID_SIZE]="";
   float pulsesPerLiter=DEFAULT_PULSES_PER_LITER;
   unsigned int reportInterval=DEFAULT_REPORT_INTERVAL; //seconds
+  int sensorType=INPUT; // INPUT, INPUT_PULLUP, INPUT_PULLDOWN_16
   } conf;
 
 conf settings; //all settings in one struct makes it easier to store in EEPROM
@@ -71,33 +74,50 @@ void reboot()
   ESP.restart();
   }
 
+//Convert the input type code to human-readable
+char* getSensorTypeText(char* buf)
+  {
+  int st=settings.sensorType;
+  if (st==INPUT) strcpy(buf,"INPUT"); 
+  else if (st==INPUT_PULLUP) strcpy(buf,"INPUT_PULLUP");
+  else if (st==INPUT_PULLDOWN_16) strcpy(buf,"INPUT_PULLDOWN");
+  else strcpy(buf,"NOT SET");
+  return buf;
+  }
+
 
 void setup() 
   {
-  //Set up hardware
-  pinMode(SENSOR_PIN,INPUT_PULLUP);
-  //pinMode(LED_BUILTIN, OUTPUT);
-  //digitalWrite(LED_BUILTIN, LOW); //turn on the LED to show we are booting
-  
   //Initialize the serial port and wait for it to open 
   Serial.begin(115200);
-  Serial.setTimeout(10000);
-  Serial.println();
+
+//  Serial.setTimeout(10000);
+  
+  // while (!Serial) 
+  //   {
+  //   delay(1000); // wait for serial port to connect. Needed for native USB port only
+  //   }
+
+  //Set up hardware
+  pinMode(SENSOR_PIN,INPUT);  //may change after we load the settings object
+
+#ifdef BOARD_D1_MINI
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW); //turn on the LED to show we are booting
+#endif
+  
+    
+  Serial.println(); //first print
   delay(500);
   Serial.println("\n***************************************************");
   Serial.print("MQTT flow counter version ");
   Serial.print(getVersion());
   Serial.println(" starting up...");
   Serial.println("***************************************************\n");
-  
-  while (!Serial) 
-    {
-    ; // wait for serial port to connect. Needed for native USB port only
-    }
-    
+
   EEPROM.begin(sizeof(settings)+sizeof(pulseCount)); //fire up the eeprom section of flash
-  Serial.print("Settings object size=");
-  Serial.println(sizeof(settings));
+  // Serial.print("Settings object size=");
+  // Serial.println(sizeof(settings));
 
     
   commandString.reserve(200); // reserve 200 bytes of serial buffer space for incoming command string
@@ -116,10 +136,12 @@ void setup()
     delay(2000);
     reboot();
     }
-  readPulseCount(); //restore the pulse count value from before power loss
+  loadPulseCount(); //restore the pulse count value from before power loss
 
   if (settingsAreValid)
     {
+    pinMode(SENSOR_PIN,settings.sensorType);
+
     if (connectToWifi())
       {
       Serial.println("\nConnected to network.");
@@ -140,10 +162,17 @@ void setup()
       }
     }
 
+  char tempbuf[15]="Unknown";
   Serial.print("Sensor pin is ");
-  Serial.println(SENSOR_PIN);
+  Serial.print(SENSOR_PIN);
+  Serial.print(" (");
+  Serial.print(getSensorTypeText(tempbuf));
+  Serial.println(")");
   
-  //digitalWrite(LED_BUILTIN, HIGH); //turn off the LED
+#ifdef BOARD_D1_MINI
+  digitalWrite(LED_BUILTIN, HIGH); //turn off the LED
+#endif
+
   attachInterrupt(digitalPinToInterrupt(SENSOR_PIN), handleInterrupt, FALLING); // Attach interrupt handler to sensor pin with falling edge detection
   }
 
@@ -151,16 +180,21 @@ boolean connectToWifi()
   {
   if (settingsAreValid)
     {
-    if (WiFi.status() != WL_CONNECTED)
+    while (WiFi.status() != WL_CONNECTED)
       {
+      Serial.print("WiFi status is ");
+      Serial.println(WiFi.status());
+
       // ********************* attempt to connect to Wifi network
       Serial.print("Attempting to connect to WPA SSID \"");
       Serial.print(settings.ssid);
       Serial.println("\"");
-      
+
+      //Serial.println(WiFi.status());
+
       WiFi.mode(WIFI_STA); //station mode, we are only a client in the wifi world
       WiFi.begin(settings.ssid, settings.wifiPassword);
-      WiFi.waitForConnectResult(); //hang around for a bit
+//      WiFi.waitForConnectResult(); //hang around for a bit
 
       //if we're still not connected, wait a little longer
       int waitCount=0;
@@ -173,6 +207,8 @@ boolean connectToWifi()
         checkForCommand(); // Check for input in case it needs to be changed to work
         delay(2000);
         }
+      if (WiFi.status() != WL_CONNECTED)
+        Serial.println("Unable to connect.  Retrying...");
       }
 
     }
@@ -251,6 +287,7 @@ void incomingMqttHandler(char* reqTopic, byte* payload, unsigned int length)
 
 void showSettings()
   {
+  char buf[15];
   Serial.print("broker=<MQTT broker host name or address> (");
   Serial.print(settings.mqttBrokerAddress);
   Serial.println(")");
@@ -281,6 +318,11 @@ void showSettings()
   Serial.print("pulseCount=<cumulative pulse count>   (");
   Serial.print(pulseCount);
   Serial.println(")");
+  Serial.print("sensorType=<INPUT, INPUT_PULLUP, or INPUT_PULLDOWN>   (");
+  Serial.print(getSensorTypeText(buf));
+  Serial.println(")");
+  Serial.print("Generated Client Id = ");
+  Serial.println(settings.mqttClientId);
   Serial.print("IP Address is ");
   Serial.print(WiFi.localIP().toString().c_str());
   Serial.println("\n");
@@ -293,6 +335,14 @@ void showSettings()
     Serial.println("\n***** Warning: Reboot is needed *****");
   }
 
+void generateMQTTClientId()
+  {
+  // Create a random client ID
+  String clientId = MQTT_CLIENT_ROOT;
+  clientId += String(random(0xffff), HEX);
+  strcpy(settings.mqttClientId,clientId.c_str());
+  }
+
 /*
  * Reconnect to the MQTT broker
  */
@@ -303,9 +353,6 @@ void reconnectToBroker()
     connectToWifi();
     return;
     }
-  // Create a random client ID
-  String clientId = "ESPClient-";
-  clientId += String(random(0xffff), HEX);
   
   // Loop until we're reconnected
   while (!mqttClient.connected()) 
@@ -313,7 +360,7 @@ void reconnectToBroker()
     Serial.print("Attempting MQTT connection...");
     
     // Attempt to connect
-    if (mqttClient.connect(clientId.c_str(),settings.mqttUsername,settings.mqttPassword))
+    if (mqttClient.connect(settings.mqttClientId,settings.mqttUsername,settings.mqttPassword))
       {
       Serial.println("connected to MQTT broker.");
 
@@ -374,7 +421,9 @@ void handlePulse()
     lastPulseTime=millis();
     lastTick=!lastTick; // used to flash the light 
     liters=pulseCount/settings.pulsesPerLiter;
-    // digitalWrite(LED_BUILTIN, lastTick?LOW:HIGH); //HIGH is LED OFF
+#ifdef BOARD_D1_MINI
+    digitalWrite(LED_BUILTIN, lastTick?LOW:HIGH); //HIGH is LED OFF
+#endif
     }
   }
 
@@ -402,7 +451,9 @@ void sendReport()
       pulseSaved=false;
       }
     lastReportCount=pulseCount; //If they stay equal then the water has stopped flowing
-    // digitalWrite(LED_BUILTIN, HIGH); //turn off the LED when water stops
+#ifdef BOARD_D1_MINI
+    digitalWrite(LED_BUILTIN, HIGH); //turn off the LED when water stops
+#endif
     }
   }
 
@@ -514,6 +565,7 @@ void processCommand(char* str)
   else if (strcmp(nme,"pulseCount")==0) //might need to manually update it
     {
     pulseCount=atoi(val);
+    liters=pulseCount/settings.pulsesPerLiter;
     storePulseCount();
     Serial.print("Pulse count set to ");
     Serial.println(pulseCount);
@@ -527,7 +579,19 @@ void processCommand(char* str)
 //    Serial.println(settings.reportInterval);
     saveSettings();
     }
-  else if ((strcmp(nme,"reboot")==0) && (strcmp(val,"yes")==0)) //reboot the controller
+  else if (strcmp(nme,"sensorType")==0)
+    {
+    if (strcmp(val,"INPUT")==0)
+      settings.sensorType=INPUT;
+    else if (strcmp(val,"INPUT_PULLUP")==0)
+      settings.sensorType=INPUT_PULLUP;
+    else if (strcmp(val,"INPUT_PULLDOWN")==0)
+      settings.sensorType=INPUT_PULLDOWN_16;
+    saveSettings();
+    if (settingsAreValid)
+      restartNeeded=true;
+    }
+else if ((strcmp(nme,"reboot")==0) && (strcmp(val,"yes")==0)) //reboot the controller
     {
     Serial.println("\n*********************** Rebooting! ************************");
     delay(2000);
@@ -565,6 +629,7 @@ void initializeSettings()
   settings.pulsesPerLiter=DEFAULT_PULSES_PER_LITER;
   settings.reportInterval=DEFAULT_REPORT_INTERVAL;
   pulseCount=0;
+  generateMQTTClientId();
   }
 
 void loop() 
@@ -687,11 +752,16 @@ boolean saveSettings()
 //    strlen(settings.mqttPassword)>0 &&
     strlen(settings.mqttTopicRoot)>0 &&
     settings.pulsesPerLiter!=0 &&
+    (settings.sensorType==INPUT 
+      || settings.sensorType==INPUT_PULLUP 
+      || settings.sensorType==INPUT_PULLDOWN_16) &&
     settings.reportInterval>0)
     {
     Serial.println("Settings deemed valid");
     settings.validConfig=VALID_SETTINGS_FLAG;
     settingsAreValid=true;
+    if (strncmp(settings.mqttClientId, MQTT_CLIENT_ROOT,sizeof(MQTT_CLIENT_ROOT) - 1)!=0)
+      generateMQTTClientId();
     }
   else
     {
@@ -730,7 +800,7 @@ boolean saveSettings()
  * Read the pulse counter from eeprom
  * 
  */
- void readPulseCount()
+ void loadPulseCount()
   {
   Serial.print("Restoring pulse counter (");
   EEPROM.get(pulseCountStorage,pulseCount);
@@ -773,6 +843,7 @@ void resetPulseCounter()
   storePulseCount(); //store the zeroed pulse counter
   }
 
+
 //**********************************************************************
 //********************** MQTT Command Handlers *************************
 //**********************************************************************
@@ -807,6 +878,11 @@ char* getMqttSettings()
   strcat(jsonStatus,", \"pulseCount\":");
   sprintf(tempbuf,"%lu",pulseCount);
   strcat(jsonStatus,tempbuf);
+  strcat(jsonStatus,", \"sensorType\":");
+  getSensorTypeText(tempbuf);
+  strcat(jsonStatus,tempbuf);
+  strcat(jsonStatus,", \"clientId\":");
+  strcat(jsonStatus,settings.mqttClientId);
   strcat(jsonStatus,", \"Address\":\"");
   strcat(jsonStatus,WiFi.localIP().toString().c_str());
   strcat(jsonStatus,"\"");
